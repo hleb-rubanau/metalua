@@ -55,7 +55,9 @@ function M.new(seen_comments, w)
     -- Number of linebreaks
     _lines = 0,
     -- wrap length
-    wrap = w or 80
+    wrap = w or 80,
+    -- Last source line number emitted (used to detect blank-line gaps)
+    _last_line = 0
   }
   return setmetatable(self, M)
 end
@@ -160,6 +162,7 @@ function M:nl()
   self:acc("\n" .. ind)
   self._line_len = string.len(ind)
   self._lines = self._lines + 1
+  self._last_line = self._last_line + 1
 end
 
 ----------------------------------------------------------------
@@ -429,6 +432,11 @@ function M:node(node)
       if co.position == pos then
         --- comes _after_ a previous expression
         if co.position == 'last' then self:nl() end
+        --- if the comment was preceded by a blank line in the
+        --- original source, emit exactly one blank line before it
+        if co.position == 'first' and co.first.l - self._last_line >= 2 then
+          self:nl()
+        end
         --- preserve existing newlines
         local lines = string.lines(co.text)
         if co.multiline then
@@ -498,6 +506,14 @@ function M:node(node)
   end
 
   show_comments('first')
+  --- advance _last_line to the node's own start line so that
+  --- subsequent blank-line checks are relative to rendered output
+  if node.lineinfo and node.lineinfo.first then
+    local nl = node.lineinfo.first.line
+    if nl and nl > self._last_line then
+      self._last_line = nl
+    end
+  end
   if not node.tag then --- tagless block.
     self:list(node, self.nl)
   else
